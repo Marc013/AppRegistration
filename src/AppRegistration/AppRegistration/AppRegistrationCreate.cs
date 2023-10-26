@@ -39,7 +39,7 @@ namespace AppRegistration
             AppRegistrationPayload? appRegistrationPayload = JsonSerializer.Deserialize<AppRegistrationPayload>(message.Body);
 
             var guid = Guid.NewGuid().ToString();
-            var nameSuffix = guid.Replace("-", "").Substring(0, 15); //Guid.NewGuid().ToString().Substring(0, 15);
+            var nameSuffix = guid.Replace("-", "").Substring(0, 15);
             _logger.LogInformation("nameSuffix is: {suffix}", nameSuffix);
 
             var appRegistrationName = $"{appRegistrationPayload?.Name}{nameSuffix}";
