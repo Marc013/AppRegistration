@@ -2,6 +2,8 @@
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
 
+// Docs: https://learn.microsoft.com/en-us/azure/key-vault/secrets/quick-create-net
+
 namespace AppRegistration.AppReg.Core
 {
     internal class AzureKeyVault (string secretName)
