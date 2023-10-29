@@ -1,14 +1,19 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using AppRegistration.AppReg.Contracts;
+using AppRegistration.AppReg.Core;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Graph.Models;
 
 namespace AppRegistration
 {
     public class AppRegistrationCreate
     {
         private readonly ILogger<AppRegistrationCreate> _logger;
+        private readonly IKeyVaultService? _keyVaultService;
 
         public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger)
         {
@@ -16,7 +21,7 @@ namespace AppRegistration
         }
 
         [Function(nameof(AppRegistrationCreate))]
-        public void Run([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
+        public async void Run([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
         {
             _logger.LogInformation("Message ID: {id}", message.MessageId);
             _logger.LogInformation("Message Body: {body}", message.Body);
@@ -37,6 +42,23 @@ namespace AppRegistration
             */
 
             AppRegistrationPayload? appRegistrationPayload = JsonSerializer.Deserialize<AppRegistrationPayload>(message.Body);
+
+            var KeyVaultName = Environment.GetEnvironmentVariable("KEY_VAULT_NAME");
+            var ServicePrinicpalName = Environment.GetEnvironmentVariable("ServicePrinicpalName");
+
+            //if (KeyVaultName != null && ServicePrinicpalName != null)
+            if ((KeyVaultName is not null) && (ServicePrinicpalName is not null))
+            {
+                var Secret = await _keyVaultService.GetKeyVaultSecretAsync(KeyVaultName, ServicePrinicpalName);
+            }
+            else
+            {
+                if (KeyVaultName == null)
+                    throw new NullReferenceException(nameof(KeyVaultName));
+
+                if (ServicePrinicpalName == null)
+                    throw new NullReferenceException(nameof(ServicePrinicpalName));
+            }
 
             var guid = Guid.NewGuid().ToString();
             var nameSuffix = guid.Replace("-", "").Substring(0, 15);
