@@ -13,7 +13,7 @@ namespace AppRegistration
     public class AppRegistrationCreate
     {
         private readonly ILogger<AppRegistrationCreate> _logger;
-        private readonly IKeyVaultService? _keyVaultService;
+        private readonly IKeyVaultService _keyVaultService;
 
         public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger)
         {
