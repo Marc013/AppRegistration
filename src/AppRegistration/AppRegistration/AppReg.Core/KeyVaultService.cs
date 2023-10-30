@@ -20,27 +20,21 @@ namespace AppRegistration.AppReg.Core
 
         public async Task<string?> GetKeyVaultSecretAsync(string keyVaultName, string secretName)
         {
-            if (string.IsNullOrWhiteSpace(keyVaultName) && string.IsNullOrWhiteSpace(secretName))
+            string kvUri = $"https://{keyVaultName}.vault.azure.net";
+
+            var client = new SecretClient(new Uri(kvUri), new DefaultAzureCredential());
+
+            try
             {
-                string kvUri = $"https://{keyVaultName}.vault.azure.net";
+                var secret = await client.GetSecretAsync(secretName);
 
-                var client = new SecretClient(new Uri(kvUri), new DefaultAzureCredential());
-
-                try
-                {
-                    var secret = await client.GetSecretAsync(secretName);
-
-                    return secret.Value.Value;
-                }
-                catch (RequestFailedException ex)
-                {
-                    _logger.LogError(ex, "Error retrieving secret from key vault");
-                    return null;
-                }
+                return secret.Value.Value;
             }
-            
-            _logger.LogError("Parmeter value missing value");
-            return null;
+            catch (RequestFailedException ex)
+            {
+                _logger.LogError(ex, "Error retrieving secret from key vault");
+                return null;
+            }
         }
     }
 }
