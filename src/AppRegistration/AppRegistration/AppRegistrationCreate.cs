@@ -1,27 +1,26 @@
-using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using AppRegistration.AppReg.Contracts;
-using AppRegistration.AppReg.Core;
+using Azure;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
-using Microsoft.Graph.Models;
 
 namespace AppRegistration
 {
-    public class AppRegistrationCreate
+    internal class AppRegistrationCreate
     {
         private readonly ILogger<AppRegistrationCreate> _logger;
         private readonly IKeyVaultService _keyVaultService;
 
-        public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger)
+        public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
+            IKeyVaultService keyVaultService)
         {
             _logger = logger;
+            _keyVaultService = keyVaultService;
         }
 
         [Function(nameof(AppRegistrationCreate))]
-        public async void Run([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
+        public async Task Run([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
         {
             _logger.LogInformation("Message ID: {id}", message.MessageId);
             _logger.LogInformation("Message Body: {body}", message.Body);
@@ -46,18 +45,24 @@ namespace AppRegistration
             var KeyVaultName = Environment.GetEnvironmentVariable("KEY_VAULT_NAME");
             var ServicePrinicpalName = Environment.GetEnvironmentVariable("ServicePrinicpalName");
 
-            //if (KeyVaultName != null && ServicePrinicpalName != null)
-            if ((KeyVaultName is not null) && (ServicePrinicpalName is not null))
+            if (string.IsNullOrWhiteSpace(KeyVaultName))
             {
-                var Secret = await _keyVaultService.GetKeyVaultSecretAsync(KeyVaultName, ServicePrinicpalName);
+                _logger.LogError("Missing value environment variable 'KEY_VAULT_NAME'");
+                return;
             }
-            else
-            {
-                if (KeyVaultName == null)
-                    throw new NullReferenceException(nameof(KeyVaultName));
 
-                if (ServicePrinicpalName == null)
-                    throw new NullReferenceException(nameof(ServicePrinicpalName));
+            if (string.IsNullOrWhiteSpace(ServicePrinicpalName))
+            {
+                _logger.LogError("Missing value environment variable 'ServicePrinicpalName'");
+                return;
+            }
+
+            var secret = await _keyVaultService.GetKeyVaultSecretAsync(KeyVaultName, ServicePrinicpalName);
+
+            if (string.IsNullOrWhiteSpace(secret))
+            {
+                _logger.LogError("Error retrieving secret from key vault {KeyVaultName}", KeyVaultName);
+                return;
             }
 
             var guid = Guid.NewGuid().ToString();

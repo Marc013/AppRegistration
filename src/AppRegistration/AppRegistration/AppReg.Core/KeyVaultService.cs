@@ -1,16 +1,26 @@
-﻿using System;
+﻿using AppRegistration.AppReg.Contracts;
+using Azure;
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
+using Microsoft.Extensions.Logging;
 
 // Docs: https://learn.microsoft.com/en-us/azure/key-vault/secrets/quick-create-net
 
 namespace AppRegistration.AppReg.Core
 {
-    public class KeyVaultService
+    public class KeyVaultService : IKeyVaultService
     {
-        public static async Task<string> GetKeyVaultSecretAsync(string? keyVaultName, string? secretName)
+        private readonly ILogger<KeyVaultService> _logger;
+
+        public KeyVaultService(ILogger<KeyVaultService> logger)
         {
-            if ((keyVaultName is not null) && (secretName is not null))
+            _logger = logger;
+        }
+
+
+        public async Task<string?> GetKeyVaultSecretAsync(string keyVaultName, string secretName)
+        {
+            if (string.IsNullOrWhiteSpace(keyVaultName) && string.IsNullOrWhiteSpace(secretName))
             {
                 string kvUri = $"https://{keyVaultName}.vault.azure.net";
 
@@ -22,15 +32,15 @@ namespace AppRegistration.AppReg.Core
 
                     return secret.Value.Value;
                 }
-                catch (Exception ex)
+                catch (RequestFailedException ex)
                 {
-                    return ex.Message;
+                    _logger.LogError(ex, "Error retrieving secret from key vault");
+                    return null;
                 }
             }
-            else
-            {
-                return $"Missing value: keyVaultName is '{keyVaultName}', secretName is '{secretName}'";
-            }
+            
+            _logger.LogError("Parmeter value missing value");
+            return null;
         }
     }
 }
