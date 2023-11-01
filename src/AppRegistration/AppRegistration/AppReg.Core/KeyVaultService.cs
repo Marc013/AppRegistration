@@ -17,7 +17,6 @@ namespace AppRegistration.AppReg.Core
             _logger = logger;
         }
 
-
         public async Task<string?> GetKeyVaultSecretAsync(string keyVaultName, string secretName)
         {
             string kvUri = $"https://{keyVaultName}.vault.azure.net";

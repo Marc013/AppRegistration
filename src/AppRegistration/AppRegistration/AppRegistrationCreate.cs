@@ -11,12 +11,15 @@ namespace AppRegistration
     {
         private readonly ILogger<AppRegistrationCreate> _logger;
         private readonly IKeyVaultService _keyVaultService;
+        private readonly IMsGraphServices _msGraphServices;
 
         public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
-            IKeyVaultService keyVaultService)
+            IKeyVaultService keyVaultService,
+            IMsGraphServices msGrahpService)
         {
             _logger = logger;
             _keyVaultService = keyVaultService;
+            _msGraphServices = msGrahpService;
         }
 
         [Function(nameof(AppRegistrationCreate))]
@@ -65,6 +68,55 @@ namespace AppRegistration
                 return;
             }
 
+            // sign in to Microsoft Entra ID in order to validate if the uniquely created App registration exists.
+            //  If not, create the App registration. Else, create new unique App registration name and check again.
+
+            var environmentServicePrincipal = "ServicePrincipalMarc013"; //TODO: construnct this using payload info
+            var servicePrincipalData = Environment.GetEnvironmentVariable(environmentServicePrincipal)!;
+            ServicePrincipal? servicePrincipal = JsonSerializer.Deserialize<ServicePrincipal>(servicePrincipalData);
+
+            if (servicePrincipal == null)
+            {
+                _logger.LogError("No application setting found for service principal {servicePrincipalName}", environmentServicePrincipal);
+            }
+
+            if (string.IsNullOrWhiteSpace(servicePrincipal!.Name))
+            {
+                _logger.LogError("Environment service principal name not present");
+            }
+
+            if (string.IsNullOrWhiteSpace(servicePrincipal.AppId))
+            {
+                _logger.LogError("Environment service principal application ID not present");
+            }
+
+            if (string.IsNullOrWhiteSpace(servicePrincipal.TenantId))
+            {
+                _logger.LogError("Environment service principal tenant ID not present");
+            }
+
+            if (string.IsNullOrWhiteSpace(servicePrincipal.KeyVaultName))
+            {
+                _logger.LogError("Environment service principal key vault name not present");
+            }
+
+            var msGraphClient = _msGraphServices.GetGraphClientWithServicePrincipalCredential(servicePrincipal!.AppId, servicePrincipal.TenantId, secret);
+
+            /*
+              Add 'Do While'
+
+                do
+                {
+                    uniqueName = Create unique name;
+                    result = Get App reg using unique name
+                } while (result != false);
+            */
+
+            var result = await msGraphClient.Applications.GetAsync((requestConfiguration) =>
+            {
+                requestConfiguration.QueryParameters.Filter = $"startswith(displayName, '{servicePrincipal.Name}')";
+            });
+
             var guid = Guid.NewGuid().ToString();
             var nameSuffix = guid.Replace("-", "").Substring(0, 15);
             _logger.LogInformation("nameSuffix is: {suffix}", nameSuffix);
@@ -82,5 +134,13 @@ namespace AppRegistration
     {
         public required string Name { get; set; }
         public required string Message { get; set; }
+    }
+
+    public class ServicePrincipal
+    {
+        public required string Name { get; set; }
+        public required string AppId { get; set; }
+        public required string TenantId { get; set; }
+        public required string KeyVaultName { get; set; }
     }
 }
