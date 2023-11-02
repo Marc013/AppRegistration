@@ -7,6 +7,7 @@ var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureServices((context, services) => {
         services.AddSingleton<IKeyVaultService, KeyVaultService>();
+        services.AddSingleton<IMsGraphServices, MsGraphServices>();
     })
     .Build();
 
