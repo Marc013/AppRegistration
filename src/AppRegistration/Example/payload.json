@@ -1,0 +1,15 @@
+{
+  "workload": {
+    "appRegDescription": "Testing App registration creation",
+    "appRegName": "testApp001",
+    "environment": "dev",
+    "permission": {
+      "delegated": [
+        "User.Read"
+      ]
+    },
+    "requester": "doesNotExist@marc013.nl",
+    "ticketNumber": "ABCD123456",
+    "callbackEndpoint": "Callback endpoint"
+  }
+}

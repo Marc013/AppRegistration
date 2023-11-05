@@ -2,7 +2,7 @@
   "profiles": {
     "AppRegistration": {
       "commandName": "Project",
-      "commandLineArgs": "--port 7040",
+      "commandLineArgs": "--port 7065",
       "launchBrowser": false
     }
   }

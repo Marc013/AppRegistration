@@ -1,146 +1,92 @@
+using System;
 using System.Text.Json;
-using AppRegistration.AppReg.Contracts;
-using Azure;
+using AppRegistration.AppReg.Core;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
 namespace AppRegistration
 {
-    internal class AppRegistrationCreate
+    public class AppRegistrationCreate
     {
         private readonly ILogger<AppRegistrationCreate> _logger;
-        private readonly IKeyVaultService _keyVaultService;
-        private readonly IMsGraphServices _msGraphServices;
 
-        public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
-            IKeyVaultService keyVaultService,
-            IMsGraphServices msGrahpService)
+        public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger)
         {
             _logger = logger;
-            _keyVaultService = keyVaultService;
-            _msGraphServices = msGrahpService;
         }
 
         [Function(nameof(AppRegistrationCreate))]
-        public async Task Run([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
+        public void Run([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
         {
-            _logger.LogInformation("Message ID: {id}", message.MessageId);
-            _logger.LogInformation("Message Body: {body}", message.Body);
-            _logger.LogInformation("Message Content-Type: {contentType}", message.ContentType);
-
-            /*
-            1. verify message JSON data against schema
-                -- No clue. Perhaps using https://codepal.ai/code-generator/query/dl6piAuh/validate-json-schema
-            2. create unique name
-                2.1 create name ending with random alohanumeric string (15 char)
-                2.2 validate if name exists in Entra ID, when yes --> repeast above
-                2.3 create app registration (and enterprise application - or are these separate actions?)
-            3. register app registration secret in key vault
-                3.1 connect to key vault
-                3.2 set key vault secret with expiration datetime
-                3.3 assign requester role 'key vault secret user'
-            4. That will follow later, first focus on the above
-            */
-
-            AppRegistrationPayload? appRegistrationPayload = JsonSerializer.Deserialize<AppRegistrationPayload>(message.Body);
-
-            var KeyVaultName = Environment.GetEnvironmentVariable("KEY_VAULT_NAME");
-            var ServicePrinicpalName = Environment.GetEnvironmentVariable("ServicePrinicpalName");
-
-            if (string.IsNullOrWhiteSpace(KeyVaultName))
+            try
             {
-                _logger.LogError("Missing value environment variable 'KEY_VAULT_NAME'");
-                return;
-            }
+                var instrumentationMethodKey = "applicationregistrationcreation";
+                var serviceBusMessageId = message.MessageId;
+                var keyVaultName = Environment.GetEnvironmentVariable("KeyVaultName");
 
-            if (string.IsNullOrWhiteSpace(ServicePrinicpalName))
-            {
-                _logger.LogError("Missing value environment variable 'ServicePrinicpalName'");
-                return;
-            }
+                AppRegistrationCreatePayload ? appRegistrationCreatePayload = JsonSerializer.Deserialize<AppRegistrationCreatePayload>(message.Body);
 
-            var secret = await _keyVaultService.GetKeyVaultSecretAsync(KeyVaultName, ServicePrinicpalName);
+                var appRegistrationName = appRegistrationCreatePayload?.Workload.AppRegName;
+                var appRegistrationdDescription = appRegistrationCreatePayload?.Workload.AppRegDescription;
+                var environment = appRegistrationCreatePayload?.Workload.Environment.ToUpper().Replace("MANAGEMENT", "");
+                var permissionType = appRegistrationCreatePayload?.Workload.Permission.GetType().GetProperties()[0].Name; // This should be "delegated"
+                var requester = appRegistrationCreatePayload?.Workload.Requester;
+                var callbackEndpoint = appRegistrationCreatePayload?.Workload.CallbackEndpoint;
+                var ticketNumber = appRegistrationCreatePayload?.Workload.TicketNumber;
 
-            if (string.IsNullOrWhiteSpace(secret))
-            {
-                _logger.LogError("Error retrieving secret from key vault {KeyVaultName}", KeyVaultName);
-                return;
-            }
+                _logger.LogInformation("Message ID: {id}", serviceBusMessageId);
+                _logger.LogInformation("appRegistrationName: {appRegName}", appRegistrationName);
+                _logger.LogInformation("appRegistrationNameDescription: {appRegDescription}", appRegistrationdDescription);
+                _logger.LogInformation("environment: {environment}", environment);
+                _logger.LogInformation("keyVaultName: {keyVaultName}", keyVaultName);
+                _logger.LogInformation("permissionType: {permissionType}", permissionType);
 
-            // sign in to Microsoft Entra ID in order to validate if the uniquely created App registration exists.
-            //  If not, create the App registration. Else, create new unique App registration name and check again.
-
-            var environmentServicePrincipal = "ServicePrincipalMarc013"; //TODO: construnct this using payload info
-            var servicePrincipalData = Environment.GetEnvironmentVariable(environmentServicePrincipal)!;
-            ServicePrincipal? servicePrincipal = JsonSerializer.Deserialize<ServicePrincipal>(servicePrincipalData);
-
-            if (servicePrincipal == null)
-            {
-                _logger.LogError("No application setting found for service principal {servicePrincipalName}", environmentServicePrincipal);
-            }
-
-            if (string.IsNullOrWhiteSpace(servicePrincipal!.Name))
-            {
-                _logger.LogError("Environment service principal name not present");
-            }
-
-            if (string.IsNullOrWhiteSpace(servicePrincipal.AppId))
-            {
-                _logger.LogError("Environment service principal application ID not present");
-            }
-
-            if (string.IsNullOrWhiteSpace(servicePrincipal.TenantId))
-            {
-                _logger.LogError("Environment service principal tenant ID not present");
-            }
-
-            if (string.IsNullOrWhiteSpace(servicePrincipal.KeyVaultName))
-            {
-                _logger.LogError("Environment service principal key vault name not present");
-            }
-
-            var msGraphClient = _msGraphServices.GetGraphClientWithServicePrincipalCredential(servicePrincipal!.AppId, servicePrincipal.TenantId, secret);
-
-            /*
-              Add 'Do While'
-
-                do
+                if (permissionType?.ToString() == "Delegated") // This should be "delegated"
                 {
-                    uniqueName = Create unique name;
-                    result = Get App reg using unique name
-                } while (result != false);
-            */
+                    _logger.LogInformation("permission: {delegated}", appRegistrationCreatePayload?.Workload.Permission.Delegated); // dynamic with var?
+                }
+                else
+                {
+                    _logger.LogError("Unexpected permission type. Expected 'delegated' but received '{permissionType}'", permissionType);
+                }
+                _logger.LogInformation("requester: {requester}", requester);
+                _logger.LogInformation("callbackEndpoint: {callbackEndpoint}", callbackEndpoint);
+                _logger.LogInformation("ticketNumber: {ticketNumber}", ticketNumber);
 
-            var result = await msGraphClient.Applications.GetAsync((requestConfiguration) =>
+                var environmentServicePrinicpal = Environment.GetEnvironmentVariable($"ServicePrincipal{environment}");
+
+                if (string.IsNullOrWhiteSpace(environmentServicePrinicpal))
+                {
+                    var environments = new string[] { "Marc013", "Test" };
+
+                    var allowedEnvironments = AllowedEnvironments.GetAllowedEnvironments(environments);
+                    var executionMessage = $"FORBIDDEN - Request for creating an app registration in an above level tenant is not allowed. Allowed tenant(s) are '{allowedEnvironments}'";
+                    var executionStatus = "Failed";
+
+                    _logger.LogInformation(executionMessage);
+
+                    return;
+                }
+
+                var servicePrincipal = JsonSerializer.Deserialize<ServicePrincipalData>(environmentServicePrinicpal);
+
+                var keyVaultNameTargetTenant = servicePrincipal?.KeyVaultName;
+                var servicePrincipalApplicationId = servicePrincipal?.AppId;
+                var servicePrincipalName = servicePrincipal?.Name;
+                var servicePrincipalTenantId = servicePrincipal?.TenantId;
+                var servicePrincipalSecureSecret = Environment.GetEnvironmentVariable("ServicePrincipalSecretMarc013"); // DEOS NOT RETRIEVE SECRET FROM KEYVAULT :-(
+
+                _logger.LogInformation("keyVaultNameTargetTenant: {keyVaultNameTargetTenant}", keyVaultNameTargetTenant); // FOR TESTING
+            }
+            finally
             {
-                requestConfiguration.QueryParameters.Filter = $"startswith(displayName, '{servicePrincipal.Name}')";
-            });
+                // If config did not complete successfully:
+                // - remove created app registration 
+                // - remove created app registration and key vault secret 
 
-            var guid = Guid.NewGuid().ToString();
-            var nameSuffix = guid.Replace("-", "").Substring(0, 15);
-            _logger.LogInformation("nameSuffix is: {suffix}", nameSuffix);
-
-            var appRegistrationName = $"{appRegistrationPayload?.Name}{nameSuffix}";
-
-            _logger.LogInformation("appRegistrationName is: {appRegName}", appRegistrationName);
-
-            // try to get the app registration using the new name. If it doesn't exist it can be created.
-            // https://learn.microsoft.com/en-us/graph/api/application-get?view=graph-rest-1.0&tabs=csharp
+                // Send message to next function ;-)
+            }
         }
-    }
-
-    public class AppRegistrationPayload
-    {
-        public required string Name { get; set; }
-        public required string Message { get; set; }
-    }
-
-    public class ServicePrincipal
-    {
-        public required string Name { get; set; }
-        public required string AppId { get; set; }
-        public required string TenantId { get; set; }
-        public required string KeyVaultName { get; set; }
     }
 }
