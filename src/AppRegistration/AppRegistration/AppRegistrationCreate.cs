@@ -1,5 +1,7 @@
 using System;
+using System.Net.Sockets;
 using System.Text.Json;
+using AppRegistration.AppReg.Contracts;
 using AppRegistration.AppReg.Core;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
@@ -7,17 +9,21 @@ using Microsoft.Extensions.Logging;
 
 namespace AppRegistration
 {
-    public class AppRegistrationCreate
+    internal class AppRegistrationCreate
     {
         private readonly ILogger<AppRegistrationCreate> _logger;
 
-        public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger)
+        private readonly IMsGraphServices _msGraphServices;
+
+        public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
+            IMsGraphServices msGrahpService)
         {
             _logger = logger;
+            _msGraphServices = msGrahpService;
         }
 
         [Function(nameof(AppRegistrationCreate))]
-        public void Run([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
+        public async Task RunAsync([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
         {
             try
             {
@@ -25,7 +31,7 @@ namespace AppRegistration
                 var serviceBusMessageId = message.MessageId;
                 var keyVaultName = Environment.GetEnvironmentVariable("KeyVaultName");
 
-                AppRegistrationCreatePayload ? appRegistrationCreatePayload = JsonSerializer.Deserialize<AppRegistrationCreatePayload>(message.Body);
+                AppRegistrationCreatePayload? appRegistrationCreatePayload = JsonSerializer.Deserialize<AppRegistrationCreatePayload>(message.Body);
 
                 var appRegistrationName = appRegistrationCreatePayload?.Workload.AppRegName;
                 var appRegistrationdDescription = appRegistrationCreatePayload?.Workload.AppRegDescription;
@@ -35,7 +41,8 @@ namespace AppRegistration
                 var callbackEndpoint = appRegistrationCreatePayload?.Workload.CallbackEndpoint;
                 var ticketNumber = appRegistrationCreatePayload?.Workload.TicketNumber;
 
-                _logger.LogInformation("Message ID: {id}", serviceBusMessageId);
+                _logger.LogInformation("instrumentationMethodKey: {instrumentationMethodKey}", instrumentationMethodKey);
+                _logger.LogInformation("serviceBusMessageId: {serviceBusMessageId}", serviceBusMessageId);
                 _logger.LogInformation("appRegistrationName: {appRegName}", appRegistrationName);
                 _logger.LogInformation("appRegistrationNameDescription: {appRegDescription}", appRegistrationdDescription);
                 _logger.LogInformation("environment: {environment}", environment);
@@ -72,12 +79,54 @@ namespace AppRegistration
                 var servicePrincipal = JsonSerializer.Deserialize<ServicePrincipalData>(environmentServicePrinicpal);
 
                 var keyVaultNameTargetTenant = servicePrincipal?.KeyVaultName;
-                var servicePrincipalApplicationId = servicePrincipal?.AppId;
+                var servicePrincipalApplicationId = servicePrincipal?.AppId.ToString();
                 var servicePrincipalName = servicePrincipal?.Name;
-                var servicePrincipalTenantId = servicePrincipal?.TenantId;
-                var servicePrincipalSecureSecret = Environment.GetEnvironmentVariable("ServicePrincipalSecretMarc013"); // DEOS NOT RETRIEVE SECRET FROM KEYVAULT :-(
+                var servicePrincipalTenantId = servicePrincipal?.TenantId.ToString();
+                var servicePrincipalSecureSecret = Environment.GetEnvironmentVariable("ServicePrincipalSecretMarc013"); // DOES NOT RETRIEVE SECRET FROM KEYVAULT :-(
 
-                _logger.LogInformation("keyVaultNameTargetTenant: {keyVaultNameTargetTenant}", keyVaultNameTargetTenant); // FOR TESTING
+                if (string.IsNullOrWhiteSpace(keyVaultNameTargetTenant))
+                {
+                    _logger.LogError("Environment service principal key vault name not present");
+                }
+
+                if (string.IsNullOrWhiteSpace(servicePrincipalApplicationId))
+                {
+                    _logger.LogError("Environment service principal application ID not present");
+                }
+
+                if (string.IsNullOrWhiteSpace(servicePrincipalName))
+                {
+                    _logger.LogError("Environment service principal name not present");
+                }
+
+                if (string.IsNullOrWhiteSpace(servicePrincipalTenantId))
+                {
+                    _logger.LogError("Environment service principal tenant ID not present");
+                }
+
+                if (string.IsNullOrEmpty(servicePrincipalSecureSecret))
+                {
+                    _logger.LogError("Unable to retrieve the secret of service principal '{servicePrincipalName}' from key vault '{keyVaultName}'", servicePrincipalName, keyVaultName);
+
+                    return; // IS THIS REQUIRED? WHEN YES, THAN IT NEEDS TO BE ADDED IN THE ABOVE IF STATEMENTS AS WELL!
+                }
+
+                // Get requester from Microsoft Entra ID. This to validate the correct UPN is provided.
+                // This needs to be in the correct tenant!
+                // 1. Create graph client for correct tenant!
+                var msGraphClient = _msGraphServices.GetGraphClientWithServicePrincipalCredential(servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret);
+                // 2. Get user
+                var entraIdUser = await msGraphClient.Users[requester].GetAsync();
+
+                _logger.LogInformation("entraIdUser: {entraIdUser}", entraIdUser!.DisplayName);
+
+            }
+            catch (AggregateException ae)  // THIS DOES NOT WORK :-(
+            {
+                foreach (var ex in ae.InnerExceptions)
+                {
+                    _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
+                }
             }
             finally
             {
