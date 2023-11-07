@@ -1,5 +1,4 @@
 ﻿using Microsoft.Graph;
-using System.Threading.Tasks;
 
 namespace AppRegistration.AppReg.Contracts
 {

@@ -14,12 +14,15 @@ namespace AppRegistration
         private readonly ILogger<AppRegistrationCreate> _logger;
 
         private readonly IMsGraphServices _msGraphServices;
+        private readonly IUniqueAppRegistrationName _uniqueAppRegistrationName;
 
         public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
-            IMsGraphServices msGrahpService)
+            IMsGraphServices msGrahpService,
+            IUniqueAppRegistrationName uniqueAppRegistrationName)
         {
             _logger = logger;
             _msGraphServices = msGrahpService;
+            _uniqueAppRegistrationName = uniqueAppRegistrationName;
         }
 
         [Function(nameof(AppRegistrationCreate))]
@@ -33,7 +36,7 @@ namespace AppRegistration
 
                 AppRegistrationCreatePayload? appRegistrationCreatePayload = JsonSerializer.Deserialize<AppRegistrationCreatePayload>(message.Body);
 
-                var appRegistrationName = appRegistrationCreatePayload?.Workload.AppRegName;
+                var appRegistrationNamePrefix = appRegistrationCreatePayload?.Workload.AppRegName;
                 var appRegistrationdDescription = appRegistrationCreatePayload?.Workload.AppRegDescription;
                 var environment = appRegistrationCreatePayload?.Workload.Environment.ToUpper().Replace("MANAGEMENT", "");
                 var permissionType = appRegistrationCreatePayload?.Workload.Permission.GetType().GetProperties()[0].Name; // This should be "delegated"
@@ -43,7 +46,7 @@ namespace AppRegistration
 
                 _logger.LogInformation("instrumentationMethodKey: {instrumentationMethodKey}", instrumentationMethodKey);
                 _logger.LogInformation("serviceBusMessageId: {serviceBusMessageId}", serviceBusMessageId);
-                _logger.LogInformation("appRegistrationName: {appRegName}", appRegistrationName);
+                _logger.LogInformation("appRegistrationNamePrefix: {appRegName}", appRegistrationNamePrefix);
                 _logger.LogInformation("appRegistrationNameDescription: {appRegDescription}", appRegistrationdDescription);
                 _logger.LogInformation("environment: {environment}", environment);
                 _logger.LogInformation("keyVaultName: {keyVaultName}", keyVaultName);
@@ -87,28 +90,33 @@ namespace AppRegistration
                 if (string.IsNullOrWhiteSpace(keyVaultNameTargetTenant))
                 {
                     _logger.LogError("Environment service principal key vault name not present");
+                    // this needs to fail the function or inform the function developer as it's a technical issue
                 }
 
                 if (string.IsNullOrWhiteSpace(servicePrincipalApplicationId))
                 {
                     _logger.LogError("Environment service principal application ID not present");
+                    // this needs to fail the function or inform the function developer as it's a technical issue
                 }
 
                 if (string.IsNullOrWhiteSpace(servicePrincipalName))
                 {
                     _logger.LogError("Environment service principal name not present");
+                    // this needs to fail the function or inform the function developer as it's a technical issue
                 }
 
                 if (string.IsNullOrWhiteSpace(servicePrincipalTenantId))
                 {
                     _logger.LogError("Environment service principal tenant ID not present");
+                    // this needs to fail the function or inform the function developer as it's a technical issue
                 }
 
                 if (string.IsNullOrEmpty(servicePrincipalSecureSecret))
                 {
                     _logger.LogError("Unable to retrieve the secret of service principal '{servicePrincipalName}' from key vault '{keyVaultName}'", servicePrincipalName, keyVaultName);
 
-                    return; // IS THIS REQUIRED? WHEN YES, THAN IT NEEDS TO BE ADDED IN THE ABOVE IF STATEMENTS AS WELL!
+                    // this needs to fail the function or inform the function developer as it's a technical issue
+                    return;
                 }
 
                 // Get requester from Microsoft Entra ID. This to validate the correct UPN is provided.
@@ -120,9 +128,14 @@ namespace AppRegistration
 
                 _logger.LogInformation("entraIdUser: {entraIdUser}", entraIdUser!.DisplayName);
 
+
+                // Get unique App registration name using 'appRegistrationNamePrefix' GetUniqueApplicationRegistrationName
+                var uniqueAppRegistrationName = _uniqueAppRegistrationName.GetUniqueAppRegistrationNameAsync(appRegistrationNamePrefix!, servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret);
+                //-// TEST ABOVE NEW CODE!
             }
             catch (AggregateException ae)  // THIS DOES NOT WORK :-(
             {
+                // Report back the 'requester' is not found in 'environment'
                 foreach (var ex in ae.InnerExceptions)
                 {
                     _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);

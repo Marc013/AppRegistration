@@ -7,6 +7,7 @@ var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureServices((context, services) => {
         services.AddSingleton<IMsGraphServices, MsGraphServices>();
+        services.AddSingleton<IUniqueAppRegistrationName, UniqueAppRegistrationName>();
     })
     .Build();
 
