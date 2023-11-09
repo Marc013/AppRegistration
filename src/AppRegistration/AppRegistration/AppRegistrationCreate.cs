@@ -125,20 +125,20 @@ namespace AppRegistration
                 // 2. Get user
                 var entraIdUser = await msGraphClient.Users[requester].GetAsync();
 
-                _logger.LogInformation("entraIdUser: {entraIdUser}", entraIdUser!.DisplayName);
-
+                if (entraIdUser is not null)
+                {
+                    _logger.LogInformation("entraIdUser: {entraIdUser}", entraIdUser.DisplayName);
+                }
 
                 // Get unique App registration name using 'appRegistrationNamePrefix' GetUniqueApplicationRegistrationName
-                var uniqueAppRegistrationName = _uniqueAppRegistrationName.GetUniqueAppRegistrationNameAsync(appRegistrationNamePrefix!, servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret);
-                //-// TEST ABOVE NEW CODE!
+                var uniqueAppRegistrationName = await _uniqueAppRegistrationName.GetUniqueAppRegistrationNameAsync(appRegistrationNamePrefix!, servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret);
+
+                _logger.LogInformation("uniqueAppRegistrationName: {uniqueAppRegistrationName}", uniqueAppRegistrationName);
             }
-            catch (ODataError ex)  // THIS DOES NOT WORK :-(
+            catch (ODataError ex)
             {
-                // Report back the 'requester' is not found in 'environment'
-                //foreach (var ex in ae.InnerExceptions)
-                //{
-                //    _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
-                //}
+                _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
+
             }
             finally
             {

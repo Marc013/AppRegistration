@@ -20,6 +20,8 @@ namespace AppRegistration.AppReg.Core
             string servicePrincipalTenantId,
             string servicePrincipalSecureSecret)
         {
+            // VALIDATE PREFIX CONTAINS AT LEAST 2 HYPENS ('-')!
+
             var prefixSections = prefix.Contains('-') ? prefix.Split('-') : prefix.Split(' ');
 
             var countryCode = prefixSections[0].Trim().ToUpper();
@@ -34,28 +36,29 @@ namespace AppRegistration.AppReg.Core
 
             var count = 0;
             var uniqueName = "";
-            string? existingName = null;
+            bool retry = true;
 
             do
             {
-                var uniqueString = Guid.NewGuid().ToString().Remove('-')[..15];
+                var uniqueString = Guid.NewGuid().ToString("N")[..15];
                 uniqueName = $"{allowedName}-{uniqueString}";
-
+                
                 var msGraphClient = _msGraphServices.GetGraphClientWithServicePrincipalCredential(servicePrincipalApplicationId, servicePrincipalTenantId, servicePrincipalSecureSecret);
 
                 var queryResult = await msGraphClient.Applications.GetAsync((requestConfiguration) =>
                 {
-                    requestConfiguration.QueryParameters.Filter = $"eq(displayName, {servicePrincipalTenantId})";
+                    requestConfiguration.QueryParameters.Filter = $"startsWith(displayName, '{uniqueName}')";
                     requestConfiguration.QueryParameters.Count = true;
                     requestConfiguration.Headers.Add("ConsistencyLevel", "eventual");
                 });
 
-                if (!string.IsNullOrEmpty(queryResult!.Value![0].AppId))
+                if (queryResult!.OdataCount == 0 | count >= 60)
                 {
-                    existingName = queryResult!.Value![0].AppId!.ToString();
+                    retry = false;
                 }
+                count++;
             }
-            while (string.IsNullOrWhiteSpace(existingName) | count <= 60);
+            while (retry);
 
             return uniqueName;
         }
