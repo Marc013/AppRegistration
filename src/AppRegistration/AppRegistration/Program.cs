@@ -1,5 +1,6 @@
 using AppRegistration.AppReg.Contracts;
 using AppRegistration.AppReg.Core;
+using Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -11,4 +12,4 @@ var host = new HostBuilder()
     })
     .Build();
 
-host.Run();
+await host.WithIdentityLogging().RunAsync();

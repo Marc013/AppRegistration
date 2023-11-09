@@ -1,11 +1,10 @@
-using System;
-using System.Net.Sockets;
 using System.Text.Json;
 using AppRegistration.AppReg.Contracts;
 using AppRegistration.AppReg.Core;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Graph.Models.ODataErrors;
 
 namespace AppRegistration
 {
@@ -133,13 +132,13 @@ namespace AppRegistration
                 var uniqueAppRegistrationName = _uniqueAppRegistrationName.GetUniqueAppRegistrationNameAsync(appRegistrationNamePrefix!, servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret);
                 //-// TEST ABOVE NEW CODE!
             }
-            catch (AggregateException ae)  // THIS DOES NOT WORK :-(
+            catch (ODataError ex)  // THIS DOES NOT WORK :-(
             {
                 // Report back the 'requester' is not found in 'environment'
-                foreach (var ex in ae.InnerExceptions)
-                {
-                    _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
-                }
+                //foreach (var ex in ae.InnerExceptions)
+                //{
+                //    _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
+                //}
             }
             finally
             {
