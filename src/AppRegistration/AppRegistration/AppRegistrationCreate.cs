@@ -1,10 +1,12 @@
 using System.Text.Json;
 using AppRegistration.AppReg.Contracts;
 using AppRegistration.AppReg.Core;
+using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.Graph.Models.ODataErrors;
+using static AppRegistration.AppReg.Core.AppRegistrationExceptions;
 
 namespace AppRegistration
 {
@@ -27,6 +29,9 @@ namespace AppRegistration
         [Function(nameof(AppRegistrationCreate))]
         public async Task RunAsync([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
         {
+            string executionStatus = "Successful";
+            string executionMessage;
+
             try
             {
                 var instrumentationMethodKey = "applicationregistrationcreation";
@@ -67,15 +72,15 @@ namespace AppRegistration
 
                 if (string.IsNullOrWhiteSpace(environmentServicePrinicpal))
                 {
-                    var environments = new string[] { "Marc013", "Test" };
+                    var environments = new string[] { "Marc013", "Test" }; // SHOULD BE PART OF THE CONFIGURATION
 
                     var allowedEnvironments = AllowedEnvironments.GetAllowedEnvironments(environments);
-                    var executionMessage = $"FORBIDDEN - Request for creating an app registration in an above level tenant is not allowed. Allowed tenant(s) are '{allowedEnvironments}'";
-                    var executionStatus = "Failed";
+                    executionMessage = $"FORBIDDEN - Request for creating an app registration in an above level tenant is not allowed. Allowed tenant(s) are '{allowedEnvironments}'";
+                    executionStatus = "Failed";
 
-                    _logger.LogInformation(executionMessage);
+                    _logger.LogError("{executionMessage}", executionMessage);
 
-                    return;
+                    // Send message to queue
                 }
 
                 var servicePrincipal = JsonSerializer.Deserialize<ServicePrincipalData>(environmentServicePrinicpal);
@@ -84,44 +89,52 @@ namespace AppRegistration
                 var servicePrincipalApplicationId = servicePrincipal?.AppId.ToString();
                 var servicePrincipalName = servicePrincipal?.Name;
                 var servicePrincipalTenantId = servicePrincipal?.TenantId.ToString();
-                var servicePrincipalSecureSecret = Environment.GetEnvironmentVariable("ServicePrincipalSecretMarc013"); // DOES NOT RETRIEVE SECRET FROM KEYVAULT :-(
+                var servicePrincipalSecureSecret = Environment.GetEnvironmentVariable("ServicePrincipalSecretMarc013");
 
                 if (string.IsNullOrWhiteSpace(keyVaultNameTargetTenant))
                 {
-                    _logger.LogError("Environment service principal key vault name not present");
-                    // this needs to fail the function or inform the function developer as it's a technical issue
+                    executionMessage = "Environment service principal key vault name not found in app configuration";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+                    // Inform the function developer about this technical issue
                 }
 
                 if (string.IsNullOrWhiteSpace(servicePrincipalApplicationId))
                 {
-                    _logger.LogError("Environment service principal application ID not present");
-                    // this needs to fail the function or inform the function developer as it's a technical issue
+                    executionMessage = "Environment service principal application ID not found in app configuration";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+                    // Inform the function developer about this technical issue
                 }
 
                 if (string.IsNullOrWhiteSpace(servicePrincipalName))
                 {
-                    _logger.LogError("Environment service principal name not present");
-                    // this needs to fail the function or inform the function developer as it's a technical issue
+                    executionMessage = "Environment service principal name not found in app configuration";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+                    // Inform the function developer about this technical issue
                 }
 
                 if (string.IsNullOrWhiteSpace(servicePrincipalTenantId))
                 {
-                    _logger.LogError("Environment service principal tenant ID not present");
-                    // this needs to fail the function or inform the function developer as it's a technical issue
+                    executionMessage = "Environment service principal tenant ID not found in app configuration";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+                    // Inform the function developer about this technical issue
                 }
 
                 if (string.IsNullOrEmpty(servicePrincipalSecureSecret))
                 {
-                    _logger.LogError("Unable to retrieve the secret of service principal '{servicePrincipalName}' from key vault '{keyVaultName}'", servicePrincipalName, keyVaultName);
-
-                    // this needs to fail the function or inform the function developer as it's a technical issue
-                    return;
+                    executionMessage = $"Environment service principal secret (via key vault link) not found in app configuration";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+                    // Inform the function developer about this technical issue
                 }
 
                 // Get requester from Microsoft Entra ID. This to validate the correct UPN is provided.
                 // This needs to be in the correct tenant!
                 // 1. Create graph client for correct tenant!
-                var msGraphClient = _msGraphServices.GetGraphClientWithServicePrincipalCredential(servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret);
+                var msGraphClient = _msGraphServices.GetGraphClientWithServicePrincipalCredential(servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret!);
                 // 2. Get user
                 var entraIdUser = await msGraphClient.Users[requester].GetAsync();
 
@@ -131,20 +144,61 @@ namespace AppRegistration
                 }
 
                 // Get unique App registration name using 'appRegistrationNamePrefix' GetUniqueApplicationRegistrationName
-                var uniqueAppRegistrationName = await _uniqueAppRegistrationName.GetUniqueAppRegistrationNameAsync(appRegistrationNamePrefix!, servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret);
+                var uniqueAppRegistrationName = await _uniqueAppRegistrationName.GetUniqueAppRegistrationNameAsync(appRegistrationNamePrefix!, servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret!);
 
                 _logger.LogInformation("uniqueAppRegistrationName: {uniqueAppRegistrationName}", uniqueAppRegistrationName);
+            }
+            catch (AuthenticationFailedException ex)
+            {
+                _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
+                // Inform the function developer about this technical issue
             }
             catch (ODataError ex)
             {
                 _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
 
+                if (ex.Error is not null)
+                {
+                    if (ex.Error.Code == "Request_ResourceNotFound")
+                    {
+                        // send message to queue (payload content wrong)
+                    }
+                }
+
+                // TO MY RECOLLECTION THERE IS A 2ND ODATAERROR POSSIBLE!?
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
+                // send message to queue
+                var hyperErrorMessage = "Provided prefix is incorrectly formatted as it does not contain 3 sections devided by a hypen.";
+                if (ex.Message == hyperErrorMessage)
+                {
+
+                }
+                else
+                {
+                    // WHAT NOW??
+                }
+            }
+            catch (UniqueAppRegistrationNameNotFoundException ex)
+            {
+                _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
+            }
+            catch (Exception ex) // FOR TESTING
+            {
+                _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
             }
             finally
             {
                 // If config did not complete successfully:
                 // - remove created app registration 
                 // - remove created app registration and key vault secret 
+                if(executionStatus == "Failed")
+                {
+                    // Check executionMessage to determine what to clean up.
+
+                }
 
                 // Send message to next function ;-)
             }
