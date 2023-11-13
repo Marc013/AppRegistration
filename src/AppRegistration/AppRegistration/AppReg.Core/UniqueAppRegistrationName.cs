@@ -1,5 +1,6 @@
 ﻿using AppRegistration.AppReg.Contracts;
 using System.Text.RegularExpressions;
+using static AppRegistration.AppReg.Core.AppRegistrationExceptions;
 
 namespace AppRegistration.AppReg.Core
 {
@@ -21,6 +22,12 @@ namespace AppRegistration.AppReg.Core
             string servicePrincipalSecureSecret)
         {
             // VALIDATE PREFIX CONTAINS AT LEAST 2 HYPENS ('-')!
+            var hypens = prefix.Count(x => x == '-');
+
+            if (prefix.Count(x => x == '-') < 2)
+            {
+                throw new ArgumentException($"Provided prefix is incorrectly formatted as it does not contain 3 sections devided by a hypen.");
+            }
 
             var prefixSections = prefix.Contains('-') ? prefix.Split('-') : prefix.Split(' ');
 
@@ -52,13 +59,24 @@ namespace AppRegistration.AppReg.Core
                     requestConfiguration.Headers.Add("ConsistencyLevel", "eventual");
                 });
 
-                if (queryResult!.OdataCount == 0 | count >= 60)
+                if (queryResult!.OdataCount == 0)
                 {
                     retry = false;
                 }
+
+                if (count >= 60)
+                {
+                    retry = false;
+                }
+
                 count++;
             }
             while (retry);
+
+            if (count >= 60)
+            {
+                throw new UniqueAppRegistrationNameNotFoundException($"Unable to define a unique app registration name after {count} attempts.");
+            }
 
             return uniqueName;
         }
