@@ -16,14 +16,17 @@ namespace AppRegistration
 
         private readonly IMsGraphServices _msGraphServices;
         private readonly IUniqueAppRegistrationName _uniqueAppRegistrationName;
+        private readonly IServiceBusService _serviceBusService;
 
         public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
             IMsGraphServices msGrahpService,
-            IUniqueAppRegistrationName uniqueAppRegistrationName)
+            IUniqueAppRegistrationName uniqueAppRegistrationName,
+            IServiceBusService serviceBusService)
         {
             _logger = logger;
             _msGraphServices = msGrahpService;
             _uniqueAppRegistrationName = uniqueAppRegistrationName;
+            _serviceBusService = serviceBusService;
         }
 
         [Function(nameof(AppRegistrationCreate))]
@@ -83,7 +86,7 @@ namespace AppRegistration
                     // Send message to queue
                 }
 
-                var servicePrincipal = JsonSerializer.Deserialize<ServicePrincipalData>(environmentServicePrinicpal);
+                var servicePrincipal = JsonSerializer.Deserialize<ServicePrincipalData>(environmentServicePrinicpal!);
 
                 var keyVaultNameTargetTenant = servicePrincipal?.KeyVaultName;
                 var servicePrincipalApplicationId = servicePrincipal?.AppId.ToString();
@@ -200,7 +203,9 @@ namespace AppRegistration
 
                 }
 
-                // Send message to next function ;-)
+                // Send message to queue based on criteria
+                await _serviceBusService.SendQueueMessage("testMessage");
+
             }
         }
     }
