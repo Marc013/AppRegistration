@@ -51,24 +51,11 @@ namespace AppRegistration.AppReg.Core
             client = new ServiceBusClient(serviceBusConnection, clientOptions); // ONLY FOR TESTING!
             sender = client.CreateSender(queueName);
 
-            // create a batch 
-            using ServiceBusMessageBatch messageBatch = await sender.CreateMessageBatchAsync();
-
-            for (int i = 1; i <= numOfMessages; i++)
-            {
-                // try adding a message to the batch
-                if (!messageBatch.TryAddMessage(new ServiceBusMessage($"Message '{message}' {i}")))
-                {
-                    // if it is too large for the batch
-                    throw new Exception($"The message {i} is too large to fit in the batch.");
-                }
-            }
-
             try
             {
-                // Use the producer client to send the batch of messages to the Service Bus queue
-                await sender.SendMessagesAsync(messageBatch);
-                _logger.LogInformation("A batch of {numOfMessages} messages has been published to the queue.", numOfMessages);
+                // sent single message
+                await sender.SendMessageAsync(new ServiceBusMessage(message));
+                _logger.LogInformation("Sending message '{message}' to the service bus queue.", message);
             }
             finally
             {
