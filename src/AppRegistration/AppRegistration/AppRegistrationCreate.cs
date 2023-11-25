@@ -17,27 +17,34 @@ namespace AppRegistration
         private readonly IMsGraphServices _msGraphServices;
         private readonly IUniqueAppRegistrationName _uniqueAppRegistrationName;
         private readonly IServiceBusService _serviceBusService;
+        private readonly IServiceBusCreateMessage _serviceBusCreateMessage;
 
         public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
-            IMsGraphServices msGrahpService,
+            IMsGraphServices msGraphService,
             IUniqueAppRegistrationName uniqueAppRegistrationName,
-            IServiceBusService serviceBusService)
+            IServiceBusService serviceBusService,
+            IServiceBusCreateMessage serviceBusCreateMessage)
         {
             _logger = logger;
-            _msGraphServices = msGrahpService;
+            _msGraphServices = msGraphService;
             _uniqueAppRegistrationName = uniqueAppRegistrationName;
             _serviceBusService = serviceBusService;
+            _serviceBusCreateMessage = serviceBusCreateMessage;
         }
 
         [Function(nameof(AppRegistrationCreate))]
         public async Task RunAsync([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
         {
+            string? callbackEndpoint = null;
             string executionStatus = "Successful";
-            string executionMessage;
+            string? executionMessage = null;
+            string? instrumentationMethodKey = null;
+            string? requester = null;
+            string? ticketNumber = null;
 
             try
             {
-                var instrumentationMethodKey = "applicationregistrationcreation";
+                instrumentationMethodKey = "applicationregistrationcreation";
                 var serviceBusMessageId = message.MessageId;
                 var keyVaultName = Environment.GetEnvironmentVariable("KeyVaultName");
 
@@ -49,9 +56,9 @@ namespace AppRegistration
                 var appRegistrationDescription = appRegistrationCreatePayload?.Workload.AppRegDescription;
                 var environment = appRegistrationCreatePayload?.Workload.Environment.ToUpper().Replace("MANAGEMENT", "");
                 var permissionType = appRegistrationCreatePayload?.Workload.Permission.GetType().GetProperties()[0].Name; // This should be "delegated"
-                var requester = appRegistrationCreatePayload?.Workload.Requester;
-                var callbackEndpoint = appRegistrationCreatePayload?.Workload.CallbackEndpoint;
-                var ticketNumber = appRegistrationCreatePayload?.Workload.TicketNumber;
+                requester = appRegistrationCreatePayload?.Workload.Requester;
+                callbackEndpoint = appRegistrationCreatePayload?.Workload.CallbackEndpoint;
+                ticketNumber = appRegistrationCreatePayload?.Workload.TicketNumber;
 
                 _logger.LogInformation("instrumentationMethodKey: {instrumentationMethodKey}", instrumentationMethodKey);
                 _logger.LogInformation("serviceBusMessageId: {serviceBusMessageId}", serviceBusMessageId);
@@ -164,9 +171,12 @@ namespace AppRegistration
 
                 if (ex.Error is not null)
                 {
+                    executionStatus = "Failed";
+
                     if (ex.Error.Code == "Request_ResourceNotFound")
                     {
-                        await _serviceBusService.SendQueueMessage($"Unable to find provided App registration owner in Microsoft Entra ID.");
+                        executionMessage = $"Unable to find provided App registration owner '{requester}' in Microsoft Entra ID.";
+                        _logger.LogError("{executionMessage}", executionMessage);
                     }
                 }
 
@@ -174,9 +184,11 @@ namespace AppRegistration
             }
             catch (ArgumentException ex)
             {
+                executionStatus = "Failed";
+
                 _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
                 // send message to queue
-                var hyperErrorMessage = "Provided prefix is incorrectly formatted as it does not contain 3 sections devided by a hypen.";
+                var hyperErrorMessage = "Provided prefix is incorrectly formatted as it does not contain 3 sections divided by a hyphen.";
                 if (ex.Message == hyperErrorMessage)
                 {
 
@@ -199,25 +211,17 @@ namespace AppRegistration
                 // If config did not complete successfully:
                 // - remove created app registration 
                 // - remove created app registration and key vault secret 
-                if(executionStatus == "Failed")
+                if (executionStatus == "Failed")
                 {
                     // Check executionMessage to determine what to clean up.
 
                 }
 
-                // Send message to queue based on criteria
-                await _serviceBusService.SendQueueMessage("testMessage");
+                var callbackMessage = _serviceBusCreateMessage.ServiceBusCreateQueueMessage(instrumentationMethodKey!, executionStatus, executionMessage!, ticketNumber!, callbackEndpoint!);
 
-                /*
-                    $snowMessageParameters = @{
-                    IntegrationMethodKey = $instrumentationMethodKey
-                    Status               = $status
-                    Message              = $statusMessage
-                    RitmNumber           = $ticketNumber
-                    SNowEndpoint         = $snowEndpoint
-                    }
-                 */
+                var queueMessage = JsonSerializer.Serialize(callbackMessage);
 
+                await _serviceBusService.SendQueueMessage(queueMessage);
             }
         }
     }

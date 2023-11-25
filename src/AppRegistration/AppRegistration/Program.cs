@@ -10,6 +10,7 @@ var host = new HostBuilder()
         services.AddSingleton<IMsGraphServices, MsGraphServices>();
         services.AddSingleton<IUniqueAppRegistrationName, UniqueAppRegistrationName>();
         services.AddSingleton<IServiceBusService, ServiceBusService>();
+        services.AddSingleton<IServiceBusCreateMessage, ServiceBusCreateMessage>();
     })
     .Build();
 

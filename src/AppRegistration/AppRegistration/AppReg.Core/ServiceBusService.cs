@@ -42,7 +42,7 @@ namespace AppRegistration.AppReg.Core
             try
             {
                 await sender.SendMessageAsync(new ServiceBusMessage(message));
-                _logger.LogInformation("Sending message '{message}' to the service bus queue.", message);
+                _logger.LogInformation("Sending message {message} to the service bus queue.", message);
             }
             finally
             {
