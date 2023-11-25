@@ -43,8 +43,10 @@ namespace AppRegistration
 
                 AppRegistrationCreatePayload? appRegistrationCreatePayload = JsonSerializer.Deserialize<AppRegistrationCreatePayload>(message.Body);
 
+                // ToDo: validate payload. None of the values should be missing!
+
                 var appRegistrationNamePrefix = appRegistrationCreatePayload?.Workload.AppRegName;
-                var appRegistrationdDescription = appRegistrationCreatePayload?.Workload.AppRegDescription;
+                var appRegistrationDescription = appRegistrationCreatePayload?.Workload.AppRegDescription;
                 var environment = appRegistrationCreatePayload?.Workload.Environment.ToUpper().Replace("MANAGEMENT", "");
                 var permissionType = appRegistrationCreatePayload?.Workload.Permission.GetType().GetProperties()[0].Name; // This should be "delegated"
                 var requester = appRegistrationCreatePayload?.Workload.Requester;
@@ -54,7 +56,7 @@ namespace AppRegistration
                 _logger.LogInformation("instrumentationMethodKey: {instrumentationMethodKey}", instrumentationMethodKey);
                 _logger.LogInformation("serviceBusMessageId: {serviceBusMessageId}", serviceBusMessageId);
                 _logger.LogInformation("appRegistrationNamePrefix: {appRegName}", appRegistrationNamePrefix);
-                _logger.LogInformation("appRegistrationNameDescription: {appRegDescription}", appRegistrationdDescription);
+                _logger.LogInformation("appRegistrationNameDescription: {appRegDescription}", appRegistrationDescription);
                 _logger.LogInformation("environment: {environment}", environment);
                 _logger.LogInformation("keyVaultName: {keyVaultName}", keyVaultName);
                 _logger.LogInformation("permissionType: {permissionType}", permissionType);
@@ -164,7 +166,7 @@ namespace AppRegistration
                 {
                     if (ex.Error.Code == "Request_ResourceNotFound")
                     {
-                        // send message to queue (payload content wrong)
+                        await _serviceBusService.SendQueueMessage($"Unable to find provided App registration owner in Microsoft Entra ID.");
                     }
                 }
 
@@ -205,6 +207,16 @@ namespace AppRegistration
 
                 // Send message to queue based on criteria
                 await _serviceBusService.SendQueueMessage("testMessage");
+
+                /*
+                    $snowMessageParameters = @{
+                    IntegrationMethodKey = $instrumentationMethodKey
+                    Status               = $status
+                    Message              = $statusMessage
+                    RitmNumber           = $ticketNumber
+                    SNowEndpoint         = $snowEndpoint
+                    }
+                 */
 
             }
         }
