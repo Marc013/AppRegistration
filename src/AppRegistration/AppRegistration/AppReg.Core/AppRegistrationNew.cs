@@ -33,18 +33,6 @@ namespace AppRegistration.AppReg.Core
                         }
                     }
                 },
-                //PasswordCredentials = new List<PasswordCredential>
-                //{
-                //    new PasswordCredential
-                //    {
-                //        DisplayName = "My Entra ID App Password",
-                //        EndDateTime = DateTimeOffset.UtcNow.AddYears(validity),
-                //        StartDateTime = DateTimeOffset.UtcNow,
-                //        KeyId = new Guid(),
-                //        CustomKeyIdentifier = null,
-                //        SecretText = "<your_password>" // expect that this is not required. Will get password automagically
-                //    }
-                //},
                 Notes = "This is my new app registration"
             };
 
@@ -55,15 +43,6 @@ namespace AppRegistration.AppReg.Core
 
         public async Task<PasswordCredential> addPassword(GraphServiceClient msGraphClient, string applicationId, int validity = 1)
         {
-            //var passwordCredential = new PasswordCredential
-            //{
-            //    DisplayName = "Password friendly name",
-            //    EndDateTime = DateTimeOffset.UtcNow.AddYears(validity),
-            //    StartDateTime = DateTimeOffset.Now,
-            //    KeyId = Guid.NewGuid(),
-            //    CustomKeyIdentifier = null,
-            //};
-
             var requestBody = new AddPasswordPostRequestBody
             {
                 PasswordCredential = new PasswordCredential
