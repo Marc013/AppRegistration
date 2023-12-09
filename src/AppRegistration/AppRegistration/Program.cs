@@ -11,6 +11,7 @@ var host = new HostBuilder()
         services.AddSingleton<IUniqueAppRegistrationName, UniqueAppRegistrationName>();
         services.AddSingleton<IServiceBusService, ServiceBusService>();
         services.AddSingleton<IServiceBusCreateMessage, ServiceBusCreateMessage>();
+        services.AddSingleton<IAppRegistrationNew, AppRegistrationNew> ();
     })
     .Build();
 

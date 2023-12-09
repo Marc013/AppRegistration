@@ -18,26 +18,29 @@ namespace AppRegistration
         private readonly IUniqueAppRegistrationName _uniqueAppRegistrationName;
         private readonly IServiceBusService _serviceBusService;
         private readonly IServiceBusCreateMessage _serviceBusCreateMessage;
+        private readonly IAppRegistrationNew _appRegistrationNew;
 
         public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
             IMsGraphServices msGraphService,
             IUniqueAppRegistrationName uniqueAppRegistrationName,
             IServiceBusService serviceBusService,
-            IServiceBusCreateMessage serviceBusCreateMessage)
+            IServiceBusCreateMessage serviceBusCreateMessage,
+            IAppRegistrationNew appRegistrationNew)
         {
             _logger = logger;
             _msGraphServices = msGraphService;
             _uniqueAppRegistrationName = uniqueAppRegistrationName;
             _serviceBusService = serviceBusService;
             _serviceBusCreateMessage = serviceBusCreateMessage;
+            _appRegistrationNew = appRegistrationNew;
         }
 
         [Function(nameof(AppRegistrationCreate))]
         public async Task RunAsync([ServiceBusTrigger("AppRegistrationCreate", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message)
         {
             string? callbackEndpoint = null;
-            string executionStatus = "Successful";
-            string? executionMessage = null;
+            string executionStatus = "Succeeded";
+            string? executionMessage = "dummy message";
             string? instrumentationMethodKey = null;
             string? requester = null;
             string? ticketNumber = null;
@@ -150,15 +153,49 @@ namespace AppRegistration
                 // 2. Get user
                 var entraIdUser = await msGraphClient.Users[requester].GetAsync();
 
-                if (entraIdUser is not null)
+                if (entraIdUser is null)
                 {
-                    _logger.LogInformation("entraIdUser: {entraIdUser}", entraIdUser.DisplayName);
+                    executionMessage = $"Requester {requester} not found in tenant {environment}";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+
+                    // throw exception to stop
                 }
 
                 // Get unique App registration name using 'appRegistrationNamePrefix' GetUniqueApplicationRegistrationName
                 var uniqueAppRegistrationName = await _uniqueAppRegistrationName.GetUniqueAppRegistrationNameAsync(appRegistrationNamePrefix!, servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret!);
 
                 _logger.LogInformation("uniqueAppRegistrationName: {uniqueAppRegistrationName}", uniqueAppRegistrationName);
+
+                // Create app registration (and enterprise application - service principal)
+                _logger.LogInformation("Creating app registration");
+                var newAppRegistration = await _appRegistrationNew.CreateAppRegistration(msGraphClient, uniqueAppRegistrationName, appRegistrationDescription!);
+
+                if (newAppRegistration is null)
+                {
+                    executionMessage = $"Failed to create app registration";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+
+                    // throw exception to stop
+                }
+
+                _logger.LogInformation("Adding password to app registration");
+                var appRegistrationPassword = await _appRegistrationNew.addPassword(msGraphClient, newAppRegistration!.Id!);
+
+                if (appRegistrationPassword is null)
+                {
+                    executionMessage = $"Failed to add password to app registration";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+
+                    // throw exception to stop
+                }
+                else
+                {
+                    _logger.LogInformation("Password: {password}", appRegistrationPassword.SecretText); // ONLY FOR TESTING!!
+                }
+
             }
             catch (AuthenticationFailedException ex)
             {
@@ -200,10 +237,14 @@ namespace AppRegistration
             }
             catch (UniqueAppRegistrationNameNotFoundException ex)
             {
+                executionStatus = "Failed";
+
                 _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
             }
             catch (Exception ex) // FOR TESTING
             {
+                executionStatus = "Failed";
+
                 _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
             }
             finally
