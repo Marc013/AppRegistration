@@ -7,12 +7,13 @@ using Microsoft.Extensions.Hosting;
 var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureServices((context, services) => {
+        services.AddSingleton<IAppRegistrationNew, AppRegistrationNew>();
+        services.AddSingleton<IKeyVault, KeyVault>();
         services.AddSingleton<IMsGraphServices, MsGraphServices>();
-        services.AddSingleton<IUniqueAppRegistrationName, UniqueAppRegistrationName>();
         services.AddSingleton<IServiceBusService, ServiceBusService>();
         services.AddSingleton<IServiceBusCreateMessage, ServiceBusCreateMessage>();
-        services.AddSingleton<IAppRegistrationNew, AppRegistrationNew> ();
         services.AddSingleton<IServicePrincipal, ServicePrincipal> ();
+        services.AddSingleton<IUniqueAppRegistrationName, UniqueAppRegistrationName>();
     })
     .Build();
 

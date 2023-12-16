@@ -15,28 +15,31 @@ namespace AppRegistration
     {
         private readonly ILogger<AppRegistrationCreate> _logger;
 
+        private readonly IAppRegistrationNew _appRegistrationNew;
+        private readonly IKeyVault _keyVault;
         private readonly IMsGraphServices _msGraphServices;
-        private readonly IUniqueAppRegistrationName _uniqueAppRegistrationName;
         private readonly IServiceBusService _serviceBusService;
         private readonly IServiceBusCreateMessage _serviceBusCreateMessage;
-        private readonly IAppRegistrationNew _appRegistrationNew;
         private readonly IServicePrincipal _servicePrincipal;
+        private readonly IUniqueAppRegistrationName _uniqueAppRegistrationName;
 
         public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
+            IAppRegistrationNew appRegistrationNew,
+            IKeyVault keyVault,
             IMsGraphServices msGraphService,
-            IUniqueAppRegistrationName uniqueAppRegistrationName,
             IServiceBusService serviceBusService,
             IServiceBusCreateMessage serviceBusCreateMessage,
-            IAppRegistrationNew appRegistrationNew,
-            IServicePrincipal servicePrincipal)
+            IServicePrincipal servicePrincipal,
+            IUniqueAppRegistrationName uniqueAppRegistrationName)
         {
+            _appRegistrationNew = appRegistrationNew;
+            _keyVault = keyVault;
             _logger = logger;
             _msGraphServices = msGraphService;
-            _uniqueAppRegistrationName = uniqueAppRegistrationName;
             _serviceBusService = serviceBusService;
             _serviceBusCreateMessage = serviceBusCreateMessage;
-            _appRegistrationNew = appRegistrationNew;
             _servicePrincipal = servicePrincipal;
+            _uniqueAppRegistrationName = uniqueAppRegistrationName;
         }
 
         [Function(nameof(AppRegistrationCreate))]
@@ -87,22 +90,22 @@ namespace AppRegistration
                 _logger.LogInformation("callbackEndpoint: {callbackEndpoint}", callbackEndpoint);
                 _logger.LogInformation("ticketNumber: {ticketNumber}", ticketNumber);
 
-                var environmentServicePrinicpal = Environment.GetEnvironmentVariable($"ServicePrincipal{environment}");
+                var environmentServicePrincipal = Environment.GetEnvironmentVariable($"ServicePrincipal{environment}");
 
-                if (string.IsNullOrWhiteSpace(environmentServicePrinicpal))
+                if (environmentServicePrincipal is null)
                 {
                     var environments = new string[] { "Marc013", "Test" }; // SHOULD BE PART OF THE CONFIGURATION
 
                     var allowedEnvironments = AllowedEnvironments.GetAllowedEnvironments(environments);
+                    
                     executionMessage = $"FORBIDDEN - Request for creating an app registration in an above level tenant is not allowed. Allowed tenant(s) are '{allowedEnvironments}'";
                     executionStatus = "Failed";
-
                     _logger.LogError("{executionMessage}", executionMessage);
-
-                    // Send message to queue
                 }
 
-                var servicePrincipal = JsonSerializer.Deserialize<ServicePrincipalData>(environmentServicePrinicpal!);
+                // TODO: GET SECRET OF environmentServicePrincipal FROM KEY VAULT
+
+                var servicePrincipal = JsonSerializer.Deserialize<ServicePrincipalData>(environmentServicePrincipal!);
 
                 var keyVaultNameTargetTenant = servicePrincipal?.KeyVaultName;
                 var servicePrincipalApplicationId = servicePrincipal?.AppId.ToString();
@@ -110,7 +113,7 @@ namespace AppRegistration
                 var servicePrincipalTenantId = servicePrincipal?.TenantId.ToString();
                 var servicePrincipalSecureSecret = Environment.GetEnvironmentVariable("ServicePrincipalSecretMarc013");
 
-                if (string.IsNullOrWhiteSpace(keyVaultNameTargetTenant))
+                if(keyVaultNameTargetTenant is null)
                 {
                     executionMessage = "Environment service principal key vault name not found in app configuration";
                     executionStatus = "Failed";
@@ -118,7 +121,7 @@ namespace AppRegistration
                     // Inform the function developer about this technical issue
                 }
 
-                if (string.IsNullOrWhiteSpace(servicePrincipalApplicationId))
+                if(servicePrincipalApplicationId is null)
                 {
                     executionMessage = "Environment service principal application ID not found in app configuration";
                     executionStatus = "Failed";
@@ -126,7 +129,7 @@ namespace AppRegistration
                     // Inform the function developer about this technical issue
                 }
 
-                if (string.IsNullOrWhiteSpace(servicePrincipalName))
+                if(servicePrincipalName is null)
                 {
                     executionMessage = "Environment service principal name not found in app configuration";
                     executionStatus = "Failed";
@@ -134,7 +137,7 @@ namespace AppRegistration
                     // Inform the function developer about this technical issue
                 }
 
-                if (string.IsNullOrWhiteSpace(servicePrincipalTenantId))
+                if(servicePrincipalTenantId is null)
                 {
                     executionMessage = "Environment service principal tenant ID not found in app configuration";
                     executionStatus = "Failed";
@@ -142,7 +145,7 @@ namespace AppRegistration
                     // Inform the function developer about this technical issue
                 }
 
-                if (string.IsNullOrEmpty(servicePrincipalSecureSecret))
+                if (servicePrincipalSecureSecret is null)
                 {
                     executionMessage = $"Environment service principal secret (via key vault link) not found in app configuration";
                     executionStatus = "Failed";
@@ -223,6 +226,10 @@ namespace AppRegistration
 
                     // throw exception to stop
                 }
+
+                // NEXT: Add app registration secret to key vault
+                // NEXT: Set role 'Key Vault Secrets User' [4633458b-17de-408a-b874-0445c86b69e6] on secret for requester
+                // Docs: https://learn.microsoft.com/en-us/azure/key-vault/general/rbac-guide?tabs=azure-cli#azure-built-in-roles-for-key-vault-data-plane-operations
 
             }
             catch (AuthenticationFailedException ex)
