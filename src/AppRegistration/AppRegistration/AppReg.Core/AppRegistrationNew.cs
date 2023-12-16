@@ -9,7 +9,7 @@ namespace AppRegistration.AppReg.Core
 {
     public class AppRegistrationNew : IAppRegistrationNew
     {
-        public async Task<Application> CreateAppRegistration(GraphServiceClient msGraphClient, string name, string description)
+        public async Task<Application> CreateAppRegistration(GraphServiceClient msGraphClient, string name, string description, string notes)
         {
             var app = new Application
             {
@@ -33,7 +33,7 @@ namespace AppRegistration.AppReg.Core
                         }
                     }
                 },
-                Notes = "This is my new app registration"
+                Notes = notes,
             };
 
             var createdApp = await msGraphClient.Applications.PostAsync(app);

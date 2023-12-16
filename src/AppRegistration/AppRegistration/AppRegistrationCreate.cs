@@ -5,6 +5,7 @@ using Azure.Identity;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.Graph.Models;
 using Microsoft.Graph.Models.ODataErrors;
 using static AppRegistration.AppReg.Core.AppRegistrationExceptions;
 
@@ -19,13 +20,15 @@ namespace AppRegistration
         private readonly IServiceBusService _serviceBusService;
         private readonly IServiceBusCreateMessage _serviceBusCreateMessage;
         private readonly IAppRegistrationNew _appRegistrationNew;
+        private readonly IServicePrincipal _servicePrincipal;
 
         public AppRegistrationCreate(ILogger<AppRegistrationCreate> logger,
             IMsGraphServices msGraphService,
             IUniqueAppRegistrationName uniqueAppRegistrationName,
             IServiceBusService serviceBusService,
             IServiceBusCreateMessage serviceBusCreateMessage,
-            IAppRegistrationNew appRegistrationNew)
+            IAppRegistrationNew appRegistrationNew,
+            IServicePrincipal servicePrincipal)
         {
             _logger = logger;
             _msGraphServices = msGraphService;
@@ -33,6 +36,7 @@ namespace AppRegistration
             _serviceBusService = serviceBusService;
             _serviceBusCreateMessage = serviceBusCreateMessage;
             _appRegistrationNew = appRegistrationNew;
+            _servicePrincipal = servicePrincipal;
         }
 
         [Function(nameof(AppRegistrationCreate))]
@@ -153,7 +157,7 @@ namespace AppRegistration
                 // 2. Get user
                 var entraIdUser = await msGraphClient.Users[requester].GetAsync();
 
-                if (entraIdUser is null)
+                if (entraIdUser!.UserPrincipalName != requester) // CHECK IF THIS CHECK ALSO WORKS WHEN THE REQUESTER IS NOT FOUND
                 {
                     executionMessage = $"Requester {requester} not found in tenant {environment}";
                     executionStatus = "Failed";
@@ -163,15 +167,18 @@ namespace AppRegistration
                 }
 
                 // Get unique App registration name using 'appRegistrationNamePrefix' GetUniqueApplicationRegistrationName
+                _logger.LogInformation("Generating unique app registration name");
                 var uniqueAppRegistrationName = await _uniqueAppRegistrationName.GetUniqueAppRegistrationNameAsync(appRegistrationNamePrefix!, servicePrincipalApplicationId!, servicePrincipalTenantId!, servicePrincipalSecureSecret!);
 
                 _logger.LogInformation("uniqueAppRegistrationName: {uniqueAppRegistrationName}", uniqueAppRegistrationName);
 
-                // Create app registration (and enterprise application - service principal)
                 _logger.LogInformation("Creating app registration");
-                var newAppRegistration = await _appRegistrationNew.CreateAppRegistration(msGraphClient, uniqueAppRegistrationName, appRegistrationDescription!);
+                var notes = @"{""requester"": """ + requester + @""", ""ticketNumber"": """ + ticketNumber + @"""}";
 
-                if (newAppRegistration is null)
+                var newAppRegistration = await _appRegistrationNew.CreateAppRegistration(msGraphClient, uniqueAppRegistrationName,
+                    appRegistrationDescription!, notes);
+
+                if (newAppRegistration.DisplayName != uniqueAppRegistrationName)
                 {
                     executionMessage = $"Failed to create app registration";
                     executionStatus = "Failed";
@@ -181,7 +188,7 @@ namespace AppRegistration
                 }
 
                 _logger.LogInformation("Adding password to app registration");
-                var appRegistrationPassword = await _appRegistrationNew.addPassword(msGraphClient, newAppRegistration!.Id!);
+                var appRegistrationPassword = await _appRegistrationNew.addPassword(msGraphClient, newAppRegistration.Id!);
 
                 if (appRegistrationPassword is null)
                 {
@@ -191,9 +198,30 @@ namespace AppRegistration
 
                     // throw exception to stop
                 }
-                else
+
+                _logger.LogInformation("Creating service principal");
+
+                var newServicePrincipal = await _servicePrincipal.Create(msGraphClient, uniqueAppRegistrationName, appRegistrationDescription!, newAppRegistration.AppId!, notes);
+
+                if (newServicePrincipal.DisplayName != uniqueAppRegistrationName)
                 {
-                    _logger.LogInformation("Password: {password}", appRegistrationPassword.SecretText); // ONLY FOR TESTING!!
+                    executionMessage = $"Failed to create service principal";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+
+                    // throw exception to stop
+                }
+
+                _logger.LogInformation("Assigning requester to service principal");
+                var addRole = await _servicePrincipal.AddRole(msGraphClient, newServicePrincipal.Id!, entraIdUser.Id!);
+
+                if (addRole.ResourceDisplayName != uniqueAppRegistrationName)
+                {
+                    executionMessage = $"Failed to add the requester as user to the service principal";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+
+                    // throw exception to stop
                 }
 
             }
@@ -215,6 +243,11 @@ namespace AppRegistration
                         executionMessage = $"Unable to find provided App registration owner '{requester}' in Microsoft Entra ID.";
                         _logger.LogError("{executionMessage}", executionMessage);
                     }
+                    else
+                    {
+                        executionMessage = ex.Message;
+                        _logger.LogError("{executionMessage}", executionMessage);
+                    }
                 }
 
                 // TO MY RECOLLECTION THERE IS A 2ND ODATAERROR POSSIBLE!?
@@ -228,7 +261,7 @@ namespace AppRegistration
                 var hyperErrorMessage = "Provided prefix is incorrectly formatted as it does not contain 3 sections divided by a hyphen.";
                 if (ex.Message == hyperErrorMessage)
                 {
-
+                    // HANDLE THIS!
                 }
                 else
                 {
@@ -239,13 +272,17 @@ namespace AppRegistration
             {
                 executionStatus = "Failed";
 
-                _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
+                executionMessage = ex.Message;
+                _logger.LogError("{type}: {message}", ex.GetType().Name, executionMessage);
+                _logger.LogError("{executionMessage}", executionMessage);
             }
             catch (Exception ex) // FOR TESTING
             {
                 executionStatus = "Failed";
 
-                _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
+                executionMessage = ex.Message;
+                _logger.LogError("{type}: {message}", ex.GetType().Name, executionMessage);
+                _logger.LogError("{executionMessage}", executionMessage);
             }
             finally
             {
@@ -258,7 +295,8 @@ namespace AppRegistration
 
                 }
 
-                var callbackMessage = _serviceBusCreateMessage.ServiceBusCreateQueueMessage(instrumentationMethodKey!, executionStatus, executionMessage!, ticketNumber!, callbackEndpoint!);
+                var callbackMessage = _serviceBusCreateMessage.ServiceBusCreateQueueMessage(instrumentationMethodKey!, executionStatus,
+                    executionMessage!, ticketNumber!, callbackEndpoint!);
 
                 var queueMessage = JsonSerializer.Serialize(callbackMessage);
 
