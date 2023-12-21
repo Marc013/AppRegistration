@@ -228,6 +228,7 @@ namespace AppRegistration
                 }
 
                 // NEXT: Add app registration secret to key vault
+                var setSecretInKeyVault = _keyVault.GetSecret(); // HIER VERDER
                 // NEXT: Set role 'Key Vault Secrets User' [4633458b-17de-408a-b874-0445c86b69e6] on secret for requester
                 // Docs: https://learn.microsoft.com/en-us/azure/key-vault/general/rbac-guide?tabs=azure-cli#azure-built-in-roles-for-key-vault-data-plane-operations
 
@@ -305,9 +306,7 @@ namespace AppRegistration
                 var callbackMessage = _serviceBusCreateMessage.ServiceBusCreateQueueMessage(instrumentationMethodKey!, executionStatus,
                     executionMessage!, ticketNumber!, callbackEndpoint!);
 
-                var queueMessage = JsonSerializer.Serialize(callbackMessage);
-
-                await _serviceBusService.SendQueueMessage(queueMessage);
+                await _serviceBusService.SendQueueMessage(callbackMessage);
             }
         }
     }

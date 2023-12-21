@@ -5,6 +5,8 @@ using Azure.Security.KeyVault.Secrets;
 using Microsoft.Extensions.Logging;
 using Azure.Security.KeyVault.Administration;
 using System.Net;
+using Azure.Core;
+using System;
 
 // Docs: https://learn.microsoft.com/en-us/azure/key-vault/secrets/quick-create-net
 
@@ -13,17 +15,19 @@ namespace AppRegistration.AppReg.Core
     public class KeyVault : IKeyVault
     {
         private readonly ILogger<KeyVault> _logger;
+        private readonly ITokenCredentialProvider _TokenCredentialProvider;
 
-        public KeyVault(ILogger<KeyVault> logger)
+        public KeyVault(ILogger<KeyVault> logger, ITokenCredentialProvider tokenCredentialProvider)
         {
             _logger = logger;
+            _TokenCredentialProvider = tokenCredentialProvider;
         }
 
-        public async Task<KeyVaultSecret?> GetSecret(string keyVaultName, string secretName)
+        public async Task<KeyVaultSecret?> GetSecret(string environment, string keyVaultName, string secretName)
         {
             string kvUri = $"https://{keyVaultName}.vault.azure.net";
 
-            var client = new SecretClient(new Uri(kvUri), new DefaultAzureCredential());
+            var client = new SecretClient(new Uri(kvUri), _TokenCredentialProvider.GetTokenForEnvironment(environment));
 
             try
             {
@@ -39,11 +43,11 @@ namespace AppRegistration.AppReg.Core
             }
         }
 
-        public async Task<KeyVaultSecret?> AddSecret(string keyVaultName, string secretName, string secretValue)
+        public async Task<KeyVaultSecret?> AddSecret(string environment, string keyVaultName, string secretName, string secretValue)
         {
             string kvUri = $"https://{keyVaultName}.vault.azure.net";
 
-            var client = new SecretClient(new Uri(kvUri), new DefaultAzureCredential());
+            var client = new SecretClient(new Uri(kvUri), _TokenCredentialProvider.GetTokenForEnvironment(environment));
 
             try
             {
@@ -58,7 +62,8 @@ namespace AppRegistration.AppReg.Core
             }
         }
 
-        public async Task<KeyVaultRoleAssignment?> AddRole(string roleId, string keyVaultName, string secretName, string principalObjectId)
+        public async Task<KeyVaultRoleAssignment?> AddRole(string environment, string roleId, string keyVaultName, string secretName,
+            string principalObjectId)
         {
             // Docs:
             // https://github.com/Azure/azure-sdk-for-net/blob/Azure.Security.KeyVault.Administration_4.3.0/sdk/keyvault/Azure.Security.KeyVault.Administration/samples/Sample1_RbacHelloWorldAsync.md
@@ -66,7 +71,7 @@ namespace AppRegistration.AppReg.Core
 
             string kvUri = $"https://{keyVaultName}.vault.azure.net";
 
-            var client = new KeyVaultAccessControlClient(new Uri(kvUri), new DefaultAzureCredential());
+            var client = new KeyVaultAccessControlClient(new Uri(kvUri), _TokenCredentialProvider.GetTokenForEnvironment(environment));
 
             try
             {
