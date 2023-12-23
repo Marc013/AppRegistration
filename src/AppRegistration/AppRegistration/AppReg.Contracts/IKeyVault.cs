@@ -7,7 +7,7 @@ namespace AppRegistration.AppReg.Contracts
     {
         Task<KeyVaultSecret?> GetSecret(string environment, string keyVaultName, string secretName);
 
-        Task<KeyVaultSecret?> AddSecret(string environment, string keyVaultName, string secretName, string secretValue);
+        Task<KeyVaultSecret?> AddSecret(string environment, string keyVaultName, string secretName, string secretValue, int secretExpirationDays);
 
         Task<KeyVaultRoleAssignment?> AddRole(string environment, string roleId, string keyVaultName, string secretName,
             string principalObjectId);

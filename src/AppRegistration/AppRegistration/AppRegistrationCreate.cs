@@ -103,17 +103,15 @@ namespace AppRegistration
                     _logger.LogError("{executionMessage}", executionMessage);
                 }
 
-                // TODO: GET SECRET OF environmentServicePrincipal FROM KEY VAULT
-
                 var servicePrincipal = JsonSerializer.Deserialize<ServicePrincipalData>(environmentServicePrincipal!);
 
                 var keyVaultNameTargetTenant = servicePrincipal?.KeyVaultName;
                 var servicePrincipalApplicationId = servicePrincipal?.AppId.ToString();
                 var servicePrincipalName = servicePrincipal?.Name;
                 var servicePrincipalTenantId = servicePrincipal?.TenantId.ToString();
-                var servicePrincipalSecureSecret = Environment.GetEnvironmentVariable("ServicePrincipalSecretMarc013");
+                var servicePrincipalSecureSecret = Environment.GetEnvironmentVariable($"ServicePrincipalSecret{environment}"); // "ServicePrincipalSecretMarc013"
 
-                if(keyVaultNameTargetTenant is null)
+                if (keyVaultNameTargetTenant is null)
                 {
                     executionMessage = "Environment service principal key vault name not found in app configuration";
                     executionStatus = "Failed";
@@ -160,7 +158,7 @@ namespace AppRegistration
                 // 2. Get user
                 var entraIdUser = await msGraphClient.Users[requester].GetAsync();
 
-                if (entraIdUser!.UserPrincipalName != requester) // CHECK IF THIS CHECK ALSO WORKS WHEN THE REQUESTER IS NOT FOUND
+                if (entraIdUser is null || entraIdUser.UserPrincipalName != requester) // CHECK IF THIS CHECK ALSO WORKS WHEN THE REQUESTER IS NOT FOUND
                 {
                     executionMessage = $"Requester {requester} not found in tenant {environment}";
                     executionStatus = "Failed";
@@ -193,7 +191,7 @@ namespace AppRegistration
                 _logger.LogInformation("Adding password to app registration");
                 var appRegistrationPassword = await _appRegistrationNew.addPassword(msGraphClient, newAppRegistration.Id!);
 
-                if (appRegistrationPassword is null)
+                if (appRegistrationPassword.SecretText is null)
                 {
                     executionMessage = $"Failed to add password to app registration";
                     executionStatus = "Failed";
@@ -216,7 +214,7 @@ namespace AppRegistration
                 }
 
                 _logger.LogInformation("Assigning requester to service principal");
-                var addRole = await _servicePrincipal.AddRole(msGraphClient, newServicePrincipal.Id!, entraIdUser.Id!);
+                var addRole = await _servicePrincipal.AddRole(msGraphClient, newServicePrincipal.Id!, entraIdUser!.Id!);
 
                 if (addRole.ResourceDisplayName != uniqueAppRegistrationName)
                 {
@@ -227,11 +225,21 @@ namespace AppRegistration
                     // throw exception to stop
                 }
 
-                // NEXT: Add app registration secret to key vault
-                var setSecretInKeyVault = _keyVault.GetSecret(); // HIER VERDER
-                // NEXT: Set role 'Key Vault Secrets User' [4633458b-17de-408a-b874-0445c86b69e6] on secret for requester
-                // Docs: https://learn.microsoft.com/en-us/azure/key-vault/general/rbac-guide?tabs=azure-cli#azure-built-in-roles-for-key-vault-data-plane-operations
+                _logger.LogInformation("Adding app registration secret to key vault {keyVaultName}", keyVaultName);
+                var setSecretInKeyVault = await _keyVault.AddSecret(environment!, keyVaultName!, uniqueAppRegistrationName, appRegistrationPassword.SecretText!, 7);
 
+                if (setSecretInKeyVault is null)
+                {
+                    executionMessage = $"Failed to add app registration secret to key vault";
+                    executionStatus = "Failed";
+                    _logger.LogError("{executionMessage}", executionMessage);
+
+                    // throw exception to stop AND clean up
+                }
+
+                // Docs: https://learn.microsoft.com/en-us/azure/key-vault/general/rbac-guide?tabs=azure-cli#azure-built-in-roles-for-key-vault-data-plane-operations
+                _logger.LogInformation("Setting role 'Key Vault Secrets User' on app registration secret");
+                var setKeyVaultSecretRoll = await _keyVault.AddRole(environment!, "4633458b-17de-408a-b874-0445c86b69e6", keyVaultName!, setSecretInKeyVault!.Name, entraIdUser.Id!);
             }
             catch (AuthenticationFailedException ex)
             {
@@ -266,8 +274,8 @@ namespace AppRegistration
 
                 _logger.LogError("{type}: {message}", ex.GetType().Name, ex.Message);
                 // send message to queue
-                var hyperErrorMessage = "Provided prefix is incorrectly formatted as it does not contain 3 sections divided by a hyphen.";
-                if (ex.Message == hyperErrorMessage)
+                var hypenErrorMessage = "Provided prefix is incorrectly formatted as it does not contain 3 sections divided by a hyphen.";
+                if (ex.Message == hypenErrorMessage)
                 {
                     // HANDLE THIS!
                 }
@@ -300,6 +308,7 @@ namespace AppRegistration
                 if (executionStatus == "Failed")
                 {
                     // Check executionMessage to determine what to clean up.
+                    _logger.LogInformation("FUNCTION APP EXECUTION FAILED!!"); // TODO: REMOVE THIS LINE
 
                 }
 

@@ -1,12 +1,10 @@
 ﻿using AppRegistration.AppReg.Contracts;
 using Azure;
-using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
 using Microsoft.Extensions.Logging;
 using Azure.Security.KeyVault.Administration;
-using System.Net;
-using Azure.Core;
-using System;
+//using Microsoft.Azure.KeyVault.Models;
+using Microsoft.Extensions.Azure;
 
 // Docs: https://learn.microsoft.com/en-us/azure/key-vault/secrets/quick-create-net
 
@@ -43,7 +41,7 @@ namespace AppRegistration.AppReg.Core
             }
         }
 
-        public async Task<KeyVaultSecret?> AddSecret(string environment, string keyVaultName, string secretName, string secretValue)
+        public async Task<KeyVaultSecret?> AddSecret(string environment, string keyVaultName, string secretName, string secretValue, int secretExpirationDays)
         {
             string kvUri = $"https://{keyVaultName}.vault.azure.net";
 
@@ -52,6 +50,15 @@ namespace AppRegistration.AppReg.Core
             try
             {
                 var addSecret = await client.SetSecretAsync(secretName, secretValue);
+
+                _logger.LogInformation("Setting key vault secret expiration date");
+                var secretAttributes = new SecretProperties(addSecret.Value.Properties.Id)
+                {
+                    Enabled = true,
+                    ExpiresOn = DateTimeOffset.UtcNow.AddDays(secretExpirationDays).ToUniversalTime()
+                };
+
+                var test = await client.UpdateSecretPropertiesAsync(secretAttributes);
 
                 return addSecret.Value;
             }
@@ -75,8 +82,13 @@ namespace AppRegistration.AppReg.Core
 
             try
             {
-                var secret = await GetSecret(keyVaultName, secretName);
+                var secret = await GetSecret(environment, keyVaultName, secretName);
 
+                if (secret is null)
+                { 
+                    throw new Exception($"Secret {secretName} not found in key vault {keyVaultName}");
+                }
+                // TODO: This fails. It might be required to get a new key vault client after adding the secret!
                 var createdAssignment = await client.CreateRoleAssignmentAsync(new KeyVaultRoleScope(secret.Id), roleId, principalObjectId);
 
                 return createdAssignment.Value;
